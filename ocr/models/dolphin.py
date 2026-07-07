@@ -36,7 +36,9 @@ import logging
 from pathlib import Path
 from typing import Optional
 
+print("Loading PyTorch...")
 import torch
+print("Loading PIL...")
 from PIL import Image
 
 from ocr.base import OCRModel
@@ -77,6 +79,7 @@ class DolphinModel(OCRModel):
 
     def load_model(self) -> None:
         """Load Dolphin weights from HuggingFace or local path."""
+        print("Loading HuggingFace transformers (this can take a moment)...")
         from transformers import (
             AutoProcessor,
             AutoTokenizer,
@@ -139,6 +142,7 @@ class DolphinModel(OCRModel):
             return ""
 
         try:
+            logger.info("  [%s] Starting generation for %s ...", self.name, image_path.name)
             return self._run_inference(image)
         except Exception as exc:
             logger.error("Dolphin inference failed on %s: %s", image_path.name, exc)

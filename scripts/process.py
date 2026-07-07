@@ -100,9 +100,12 @@ def _setup_environment() -> dict:
 # Run immediately at import time so HF_HOME is set before any HF library loads
 _ENV = _setup_environment()
 
+print("Loading OCR pipeline and heavy dependencies (torch, transformers) — this may take 15-60 seconds...")
 
 from ocr.models import MODEL_REGISTRY  # noqa: E402  (after env setup)
 from ocr.pipeline import run_pipeline  # noqa: E402
+
+print("Dependencies loaded successfully.")
 
 
 # ---------------------------------------------------------------------------

@@ -47,7 +47,9 @@ import logging
 import tempfile
 from pathlib import Path
 
+print("Loading PyTorch...")
 import torch
+print("Loading PIL...")
 from PIL import Image
 
 from ocr.base import OCRModel
@@ -103,6 +105,7 @@ class UnlimitedOCRModel(OCRModel):
 
     def load_model(self) -> None:
         """Load Unlimited-OCR weights from HuggingFace or local path."""
+        print("Loading HuggingFace transformers (this can take a moment)...")
         from transformers import AutoModel, AutoTokenizer
 
         logger.info("Loading Unlimited-OCR from %s …", self.model_path)
@@ -151,6 +154,7 @@ class UnlimitedOCRModel(OCRModel):
             return ""
 
         try:
+            logger.info("  [%s] Starting inference for %s ...", self.name, image_path.name)
             return self._run_inference(image_path)
         except Exception as exc:
             logger.error("Unlimited-OCR inference failed on %s: %s", image_path.name, exc)
