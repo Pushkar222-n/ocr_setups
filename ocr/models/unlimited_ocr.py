@@ -122,21 +122,31 @@ class UnlimitedOCRModel(OCRModel):
 
         dtype = torch.bfloat16 if self.device != "cpu" else torch.float32
         
-        # Load config and patch missing attributes for newer transformers (>= 4.43)
-        # 1-TIME SOLUTION: We inject a custom __getattr__ into the config class
-        # so it safely returns defaults for ANY missing attribute instead of crashing.
+        # Load config and patch missing attributes for newer transformers
+        # versions. Instead of intercepting AttributeError lazily on the
+        # class (which previously invented an incomplete rope_parameters
+        # dict and caused a KeyError), we compute correct values once and
+        # set them directly on this config instance.
         config = AutoConfig.from_pretrained(self.model_path, trust_remote_code=True)
-        
-        def _safe_getattr(self, name):
-            if name == "pad_token_id": return self.__dict__.get("eos_token_id", 0)
-            if name == "attention_dropout": return 0.0
-            if name == "attention_bias": return False
-            if name == "mlp_bias": return False
-            if name == "rope_scaling": return None
-            if name == "rope_parameters": return {"rope_type": "default"}
-            raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
-            
-        config.__class__.__getattr__ = _safe_getattr
+
+        _rope_theta = getattr(config, "rope_theta", 10000.0)
+        _rope_scaling = getattr(config, "rope_scaling", None) or {}
+
+        _defaults = {
+            "pad_token_id": getattr(config, "eos_token_id", 0),
+            "attention_dropout": 0.0,
+            "attention_bias": False,
+            "mlp_bias": False,
+            "rope_scaling": None,
+            "rope_parameters": {
+                "rope_type": _rope_scaling.get("rope_type", _rope_scaling.get("type", "default")),
+                "rope_theta": _rope_theta,
+                **{k: v for k, v in _rope_scaling.items() if k not in ("rope_type", "type")},
+            },
+        }
+        for attr, value in _defaults.items():
+            if not hasattr(config, attr):
+                setattr(config, attr, value)
 
         self._model = AutoModel.from_pretrained(
             self.model_path,
