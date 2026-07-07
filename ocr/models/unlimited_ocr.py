@@ -106,7 +106,7 @@ class UnlimitedOCRModel(OCRModel):
     def load_model(self) -> None:
         """Load Unlimited-OCR weights from HuggingFace or local path."""
         print("Loading HuggingFace transformers (this can take a moment)...")
-        from transformers import AutoModel, AutoTokenizer
+        from transformers import AutoConfig, AutoModel, AutoTokenizer
         
         # Monkey-patch is_torch_fx_available to prevent ImportError in older cached deepseekv2 models
         import transformers.utils.import_utils
@@ -121,8 +121,19 @@ class UnlimitedOCRModel(OCRModel):
         )
 
         dtype = torch.bfloat16 if self.device != "cpu" else torch.float32
+        
+        # Load config and patch missing pad_token_id to prevent modeling_deepseekv2 crash
+        config = AutoConfig.from_pretrained(
+            self.model_path,
+            trust_remote_code=True,
+        )
+        if getattr(config, "pad_token_id", None) is None:
+            # Fall back to eos_token_id (1) or bos_token_id (0)
+            config.pad_token_id = getattr(config, "eos_token_id", 0)
+
         self._model = AutoModel.from_pretrained(
             self.model_path,
+            config=config,
             trust_remote_code=True,
             use_safetensors=True,
             torch_dtype=dtype,
