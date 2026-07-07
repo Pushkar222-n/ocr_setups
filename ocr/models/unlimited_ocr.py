@@ -122,23 +122,25 @@ class UnlimitedOCRModel(OCRModel):
 
         dtype = torch.bfloat16 if self.device != "cpu" else torch.float32
         
-        # Load config and patch missing pad_token_id to prevent modeling_deepseekv2 crash
-        config = AutoConfig.from_pretrained(
-            self.model_path,
-            trust_remote_code=True,
-        )
-        if getattr(config, "pad_token_id", None) is None:
-            # Fall back to eos_token_id (1) or bos_token_id (0)
-            config.pad_token_id = getattr(config, "eos_token_id", 0)
+        # Load config and patch missing attributes for newer transformers (>= 4.43)
+        # 1-TIME SOLUTION: We inject a custom __getattr__ into the config class
+        # so it safely returns defaults for ANY missing attribute instead of crashing.
+        config = AutoConfig.from_pretrained(self.model_path, trust_remote_code=True)
+        
+        def _safe_getattr(self, name):
+            defaults = {
+                "pad_token_id": getattr(self, "eos_token_id", 0),
+                "attention_dropout": 0.0,
+                "attention_bias": False,
+                "mlp_bias": False,
+                "rope_scaling": None,
+                "rope_parameters": {"rope_type": "default"},
+            }
+            if name in defaults:
+                return defaults[name]
+            raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
             
-        if getattr(config, "attention_dropout", None) is None:
-            config.attention_dropout = 0.0
-            
-        if getattr(config, "attention_bias", None) is None:
-            config.attention_bias = False
-            
-        if getattr(config, "mlp_bias", None) is None:
-            config.mlp_bias = False
+        config.__class__.__getattr__ = _safe_getattr
 
         self._model = AutoModel.from_pretrained(
             self.model_path,
