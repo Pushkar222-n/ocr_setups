@@ -1,0 +1,36 @@
+# Inputs / outputs (never commit these)
+input_pdfs/
+output_md/
+.checkpoints/
+
+# Model cache
+hf_cache/
+hf_model/
+*.bin
+*.safetensors
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+*.egg-info/
+dist/
+build/
+
+# uv
+.uv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temp images from PDF rendering
+pdf_ocr_*/

@@ -1,0 +1,36 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ocr-pipeline"
+version = "0.1.0"
+description = "Modular PDF OCR pipeline supporting Dolphin and Baidu Unlimited-OCR"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.1.0",
+    "torchvision>=0.16.0",
+    "transformers>=4.40.0",
+    "pymupdf>=1.24.0",
+    "pillow>=10.0.0",
+    "einops>=0.7.0",
+    "addict>=2.4.0",
+    "easydict>=1.10",
+    "psutil>=5.9.0",
+    "huggingface-hub>=0.23.0",
+    "accelerate>=0.28.0",
+    "matplotlib>=3.7.0",
+    "sentencepiece>=0.1.99",
+    "protobuf>=3.20.0",
+    "requests>=2.31.0",
+]
+
+[project.scripts]
+ocr-process = "scripts.process:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["ocr", "scripts"]
+
+[dependency-groups]
+dev = []
