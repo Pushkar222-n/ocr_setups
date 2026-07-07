@@ -130,6 +130,9 @@ class UnlimitedOCRModel(OCRModel):
         if getattr(config, "pad_token_id", None) is None:
             # Fall back to eos_token_id (1) or bos_token_id (0)
             config.pad_token_id = getattr(config, "eos_token_id", 0)
+            
+        if getattr(config, "attention_dropout", None) is None:
+            config.attention_dropout = 0.0
 
         self._model = AutoModel.from_pretrained(
             self.model_path,
