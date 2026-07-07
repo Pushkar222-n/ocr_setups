@@ -196,20 +196,7 @@ class UnlimitedOCRModel(OCRModel):
     # ── Internal helpers ───────────────────────────────────────────────────
 
     def _run_inference(self, image_path: Path) -> str:
-        """Call model.infer() and retrieve generated text.
-
-        The upstream model.infer() can save results to disk and also returns
-        the generated text directly.  We use a temp output_path to avoid
-        polluting the working directory, then read the text return value.
-        """
         with tempfile.TemporaryDirectory(prefix="uocr_out_") as tmp_out:
-            # The official API:
-            # model.infer(
-            #     tokenizer, prompt, image_file, output_path,
-            #     base_size, image_size, crop_mode,
-            #     max_length, no_repeat_ngram_size, ngram_window,
-            #     save_results
-            # )
             result = self._model.infer(
                 tokenizer=self._tokenizer,
                 prompt="<image>document parsing.",
@@ -224,21 +211,46 @@ class UnlimitedOCRModel(OCRModel):
                 save_results=True,
             )
 
-        # model.infer() returns the generated text directly.
-        # If it returns None (some versions only write to disk), we fall back
-        # to an empty string; the caller will log an OCR error.
-        if isinstance(result, str):
-            return result.strip()
+            if isinstance(result, str) and result.strip():
+                return result.strip()
 
-        # Some model versions return a dict with 'text' or 'markdown' key
-        if isinstance(result, dict):
-            for key in ("text", "markdown", "output", "content"):
-                if key in result and isinstance(result[key], str):
-                    return result[key].strip()
+            if isinstance(result, dict):
+                for key in ("text", "markdown", "output", "content"):
+                    if key in result and isinstance(result[key], str) and result[key].strip():
+                        return result[key].strip()
+
+            # infer() didn't return usable text directly — it logged
+            # "save results" above, meaning it wrote files into tmp_out.
+            # Read those before this directory gets deleted.
+            text = self._read_saved_output(Path(tmp_out), image_path.stem)
+            if text:
+                return text
 
         logger.warning(
-            "Unlimited-OCR returned unexpected type %s for %s — returning empty.",
+            "Unlimited-OCR returned unexpected type %s for %s and no output "
+            "file was found on disk — returning empty.",
             type(result).__name__,
             image_path.name,
         )
         return ""
+
+    def _read_saved_output(self, out_dir: Path, stem: str) -> str:
+        """Read the text/markdown file(s) that model.infer() wrote to disk."""
+        candidates = sorted(out_dir.rglob("*"))
+        text_files = [
+            p for p in candidates
+            if p.is_file() and p.suffix.lower() in (".md", ".mmd", ".txt", ".html")
+        ]
+        if not text_files:
+            return ""
+
+        # Prefer a file whose name matches this page, in case multiple
+        # pages' outputs ever end up sharing a directory.
+        matching = [p for p in text_files if stem in p.stem]
+        chosen = matching[0] if matching else text_files[0]
+
+        try:
+            return chosen.read_text(encoding="utf-8").strip()
+        except Exception as exc:
+            logger.error("Failed to read saved OCR output %s: %s", chosen, exc)
+            return ""
