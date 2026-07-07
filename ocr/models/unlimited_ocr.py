@@ -133,6 +133,12 @@ class UnlimitedOCRModel(OCRModel):
             
         if getattr(config, "attention_dropout", None) is None:
             config.attention_dropout = 0.0
+            
+        if getattr(config, "attention_bias", None) is None:
+            config.attention_bias = False
+            
+        if getattr(config, "mlp_bias", None) is None:
+            config.mlp_bias = False
 
         self._model = AutoModel.from_pretrained(
             self.model_path,
