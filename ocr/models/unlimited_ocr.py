@@ -128,16 +128,12 @@ class UnlimitedOCRModel(OCRModel):
         config = AutoConfig.from_pretrained(self.model_path, trust_remote_code=True)
         
         def _safe_getattr(self, name):
-            defaults = {
-                "pad_token_id": getattr(self, "eos_token_id", 0),
-                "attention_dropout": 0.0,
-                "attention_bias": False,
-                "mlp_bias": False,
-                "rope_scaling": None,
-                "rope_parameters": {"rope_type": "default"},
-            }
-            if name in defaults:
-                return defaults[name]
+            if name == "pad_token_id": return self.__dict__.get("eos_token_id", 0)
+            if name == "attention_dropout": return 0.0
+            if name == "attention_bias": return False
+            if name == "mlp_bias": return False
+            if name == "rope_scaling": return None
+            if name == "rope_parameters": return {"rope_type": "default"}
             raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
             
         config.__class__.__getattr__ = _safe_getattr
