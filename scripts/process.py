@@ -2,24 +2,25 @@
 
 Usage
 -----
-    uv run scripts/process.py --model dolphin --input_dir ./input_pdfs
+    uv run scripts/process.py --model dolphin
+
+    Paths and HuggingFace cache are configured automatically:
+      • On RunPod  → uses /workspace/{input_pdfs,output_md,.checkpoints,hf_cache}
+      • Elsewhere  → uses ./{input_pdfs,output_md,.checkpoints} and ~/.cache/huggingface
+
+    No need to export HF_HOME or set paths manually.
 
 Full options:
     uv run scripts/process.py \\
         --model        dolphin            # or: unlimited_ocr
-        --input_dir    ./input_pdfs       # folder with PDFs (searched recursively)
-        --output_dir   ./output_md        # where .md files are written
-        --checkpoint_dir ./.checkpoints   # per-page crash recovery state
+        --input_dir    ./input_pdfs       # override auto-detected default
+        --output_dir   ./output_md
+        --checkpoint_dir ./.checkpoints
         --model_path   ByteDance/Dolphin-v2  # HF model ID or local path
         --device       cuda               # cuda / cpu
-        --dpi          150                # PDF render resolution
+        --dpi          150                # PDF render resolution (higher = better, slower)
         --force                           # reprocess already-done PDFs
         --log_level    INFO               # DEBUG / INFO / WARNING
-
-Environment variables
----------------------
-    HF_HOME / HUGGINGFACE_HUB_CACHE  — override HuggingFace cache location
-    CUDA_VISIBLE_DEVICES             — select GPU (e.g. "0" or "0,1")
 """
 
 from __future__ import annotations
@@ -35,26 +36,92 @@ _PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from ocr.models import MODEL_REGISTRY
-from ocr.pipeline import run_pipeline
+
+# ---------------------------------------------------------------------------
+# Auto-environment setup  (runs before any HF imports so HF_HOME is honoured)
+# ---------------------------------------------------------------------------
+
+def _detect_runpod() -> bool:
+    """Return True when running inside a RunPod pod."""
+    # RunPod always injects RUNPOD_POD_ID into the environment
+    if os.environ.get("RUNPOD_POD_ID"):
+        return True
+    # Fallback: the /workspace volume is present (custom Docker on RunPod)
+    if Path("/workspace").is_dir():
+        return True
+    return False
+
+
+def _setup_environment() -> dict:
+    """Configure HF_HOME and workspace paths for the current environment.
+
+    Returns a dict of resolved default path strings so the parser can
+    reference them without re-running detection.
+
+    This function mutates os.environ in-process so every downstream library
+    (huggingface_hub, transformers, torch) picks up the correct cache path
+    without any manual `export HF_HOME=...` step.
+    """
+    on_runpod = _detect_runpod()
+
+    if on_runpod:
+        workspace = Path("/workspace")
+        hf_cache  = workspace / "hf_cache"
+        defaults  = {
+            "input_dir":      str(workspace / "input_pdfs"),
+            "output_dir":     str(workspace / "output_md"),
+            "checkpoint_dir": str(workspace / ".checkpoints"),
+        }
+    else:
+        # Local dev — use paths relative to cwd
+        hf_cache = Path.home() / ".cache" / "huggingface"
+        defaults  = {
+            "input_dir":      "./input_pdfs",
+            "output_dir":     "./output_md",
+            "checkpoint_dir": "./.checkpoints",
+        }
+
+    # Only set HF_HOME if the user hasn't already overridden it
+    if "HF_HOME" not in os.environ:
+        os.environ["HF_HOME"] = str(hf_cache)
+
+    # huggingface_hub respects both; keep them in sync
+    if "HUGGINGFACE_HUB_CACHE" not in os.environ:
+        os.environ["HUGGINGFACE_HUB_CACHE"] = str(hf_cache / "hub")
+
+    # Create the cache directory so HF doesn't complain on first run
+    hf_cache.mkdir(parents=True, exist_ok=True)
+
+    defaults["hf_cache"]  = str(hf_cache)
+    defaults["on_runpod"] = on_runpod
+    return defaults
+
+
+# Run immediately at import time so HF_HOME is set before any HF library loads
+_ENV = _setup_environment()
+
+
+from ocr.models import MODEL_REGISTRY  # noqa: E402  (after env setup)
+from ocr.pipeline import run_pipeline  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
-# Defaults
+# Defaults  (now environment-aware)
 # ---------------------------------------------------------------------------
 
-DEFAULT_MODEL = "dolphin"
-DEFAULT_INPUT_DIR = "./input_pdfs"
-DEFAULT_OUTPUT_DIR = "./output_md"
-DEFAULT_CHECKPOINT_DIR = "./.checkpoints"
-DEFAULT_DPI = 150
-DEFAULT_DEVICE = "cuda"
-DEFAULT_LOG_LEVEL = "INFO"
+DEFAULT_MODEL          = "dolphin"
+DEFAULT_INPUT_DIR      = _ENV["input_dir"]
+DEFAULT_OUTPUT_DIR     = _ENV["output_dir"]
+DEFAULT_CHECKPOINT_DIR = _ENV["checkpoint_dir"]
+DEFAULT_DPI            = 150
+DEFAULT_DEVICE         = "cuda"
+DEFAULT_LOG_LEVEL      = "INFO"
 
 MODEL_DEFAULT_PATHS: dict[str, str] = {
-    "dolphin": "ByteDance/Dolphin-v2",
+    "dolphin":       "ByteDance/Dolphin-v2",
     "unlimited_ocr": "baidu/Unlimited-OCR",
 }
+
 
 
 # ---------------------------------------------------------------------------
@@ -210,8 +277,11 @@ def main() -> None:
         sys.exit(1)
 
     # Log configuration
+    env_label = "RunPod ✓" if _ENV["on_runpod"] else "local dev"
     logger.info("═══════════════════════════════════════")
     logger.info("  OCR Pipeline")
+    logger.info("  environment  : %s", env_label)
+    logger.info("  hf_cache     : %s", _ENV["hf_cache"])
     logger.info("  model        : %s", args.model)
     logger.info("  input_dir    : %s", args.input_dir.resolve())
     logger.info("  output_dir   : %s", args.output_dir.resolve())
