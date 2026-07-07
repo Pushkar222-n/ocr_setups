@@ -83,7 +83,7 @@ class DolphinModel(OCRModel):
         from transformers import (
             AutoProcessor,
             AutoTokenizer,
-            VisionEncoderDecoderModel,
+            AutoModelForCausalLM,
         )
 
         logger.info("Loading Dolphin from %s …", self.model_path)
@@ -109,7 +109,7 @@ class DolphinModel(OCRModel):
         )
 
         dtype = torch.float16 if self.device != "cpu" else torch.float32
-        self._model = VisionEncoderDecoderModel.from_pretrained(
+        self._model = AutoModelForCausalLM.from_pretrained( # <-- Change this class
             self.model_path,
             torch_dtype=dtype,
             trust_remote_code=True,
