@@ -151,35 +151,52 @@ class DolphinModel(OCRModel):
     # ── Internal helpers ───────────────────────────────────────────────────
 
     def _run_inference(self, image: "Image.Image") -> str:
-        """Run model.generate() and decode the output tokens."""
-        # Encode the image using the processor
-        pixel_values = self._processor(
-            images=image,
-            return_tensors="pt",
-        ).pixel_values.to(self.device)
+        """Run Qwen2.5-VL text generation using chat templates."""
+        # Qwen2.5-VL expects inputs via the chat template
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": image},
+                    {"type": "text", "text": "Extract all text, tables, and formatting from this document page into Markdown."},
+                ],
+            }
+        ]
+
+        # Apply chat template
+        text_prompt = self._processor.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+
+        # Process inputs
+        inputs = self._processor(
+            text=[text_prompt],
+            images=[image],
+            padding=True,
+            return_tensors="pt"
+        ).to(self.device)
 
         if hasattr(self._model, "dtype"):
-            pixel_values = pixel_values.to(self._model.dtype)
+            inputs = inputs.to(self._model.dtype)
 
-        decoder_input_ids: Optional[torch.Tensor] = None
-        if self._tokenizer.bos_token_id is not None:
-            decoder_input_ids = torch.tensor(
-                [[self._tokenizer.bos_token_id]], device=self.device
-            )
-
+        # Generate
         with torch.no_grad():
             generated_ids = self._model.generate(
-                pixel_values=pixel_values,
-                decoder_input_ids=decoder_input_ids,
+                **inputs,
                 max_new_tokens=self.max_new_tokens,
-                early_stopping=True,
-                pad_token_id=self._tokenizer.pad_token_id,
-                eos_token_id=self._tokenizer.eos_token_id,
                 use_cache=True,
             )
 
-        # Decode — skip special tokens and strip whitespace
-        text = self._tokenizer.batch_decode(
-            generated_ids, skip_special_tokens=True
+        # Trim the prompt tokens from the output
+        generated_ids_trimmed = [
+            out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
+        ]
+
+        # Decode output
+        output_text = self._tokenizer.batch_decode(
+            generated_ids_trimmed,
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=False
         )[0]
-        return text.strip()
+        
+        return output_text.strip()
