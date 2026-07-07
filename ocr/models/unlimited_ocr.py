@@ -107,6 +107,11 @@ class UnlimitedOCRModel(OCRModel):
         """Load Unlimited-OCR weights from HuggingFace or local path."""
         print("Loading HuggingFace transformers (this can take a moment)...")
         from transformers import AutoModel, AutoTokenizer
+        
+        # Monkey-patch is_torch_fx_available to prevent ImportError in older cached deepseekv2 models
+        import transformers.utils.import_utils
+        if not hasattr(transformers.utils.import_utils, "is_torch_fx_available"):
+            transformers.utils.import_utils.is_torch_fx_available = lambda: False
 
         logger.info("Loading Unlimited-OCR from %s …", self.model_path)
 
